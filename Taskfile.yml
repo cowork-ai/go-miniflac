@@ -1,0 +1,26 @@
+# https://taskfile.dev
+
+version: "3"
+
+tasks:
+  test:
+    cmds:
+      - go test -count=1 -race -v
+
+  test/flac-to-wav:
+    cmds:
+      - cat ./testdata/Sample_BeeMoved_96kHz24bit.flac | go run ./cmd/flac-to-wav > ./testdata/Sample_BeeMoved_96kHz24bit.wav
+      - ffplay ./testdata/Sample_BeeMoved_96kHz24bit.wav
+
+  update/miniflac:
+    cmds:
+      - curl -o miniflac.h https://raw.githubusercontent.com/jprjr/miniflac/refs/heads/main/miniflac.h
+    sources:
+      - Taskfile.yml
+    generates:
+      - miniflac.h
+
+  update/testdata:
+    cmds:
+      - curl -o /tmp/Sample_BeeMoved_96kHz24bit.flac.zip https://helpguide.sony.net/high-res/sample1/v1/data/Sample_BeeMoved_96kHz24bit.flac.zip
+      - unzip -o /tmp/Sample_BeeMoved_96kHz24bit.flac.zip -d testdata
