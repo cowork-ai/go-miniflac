@@ -4,16 +4,13 @@ version: "3"
 
 tasks:
   test:
+    deps: [update/testdata]
     cmds:
       - go test -count=1 -race -v
 
   update/miniflac:
     cmds:
       - curl -o miniflac.h https://raw.githubusercontent.com/jprjr/miniflac/refs/heads/main/miniflac.h
-    sources:
-      - Taskfile.yml
-    generates:
-      - miniflac.h
 
   update/testdata:
     deps: [update/testdata/pcm]
