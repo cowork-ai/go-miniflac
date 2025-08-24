@@ -17,15 +17,95 @@ const (
 	maxSamplesPerFrame = 65_535
 )
 
+var (
+	ErrNoData             = errors.New("miniflac: no data provided")
+	ErrStreamInfoNotFound = errors.New("miniflac: STREAMINFO not found")
+)
+
+// Decode parses a FLAC byte slice and returns a [Waveform].
 func Decode(flacData []byte) (*Waveform, error) {
+	// NOTE: unsafe.SliceData returns an invalid pointer if a slice is non-nil but cap() is zero, e.g., []byte{}.
 	if len(flacData) == 0 {
-		return nil, errors.New("miniflac: input data is empty")
+		return nil, ErrNoData
 	}
-	var decoder C.miniflac_t
-	C.miniflac_init(&decoder, C.MINIFLAC_CONTAINER_UNKNOWN)
 	var p runtime.Pinner
 	defer p.Unpin()
 	p.Pin(unsafe.SliceData(flacData))
+	var decoder C.miniflac_t
+	C.miniflac_init(&decoder, C.MINIFLAC_CONTAINER_UNKNOWN)
+	var used C.uint32_t
+	if res := C.miniflac_sync(
+		&decoder, (*C.uint8_t)(unsafe.SliceData(flacData)), C.uint32_t(len(flacData)), &used,
+	); res != C.MINIFLAC_OK {
+		return nil, errors.New("miniflac: miniflac_sync failed")
+	}
+	flacData = flacData[used:]
+	var (
+		sampleRate      C.uint32_t
+		channels        C.uint8_t
+		bps             C.uint8_t
+		totalSamples    C.uint64_t
+		streamInfoFound bool
+	)
+	for C.miniflac_is_metadata(&decoder) == 1 {
+		if C.miniflac_metadata_is_streaminfo(&decoder) == 1 {
+			var res C.MINIFLAC_RESULT
+			res = C.miniflac_streaminfo_sample_rate(
+				&decoder, (*C.uint8_t)(unsafe.SliceData(flacData)), C.uint32_t(len(flacData)), &used, &sampleRate,
+			)
+			if res != C.MINIFLAC_OK {
+				return nil, errors.New("miniflac: miniflac_streaminfo_sample_rate failed")
+			}
+			flacData = flacData[used:]
+			res = C.miniflac_streaminfo_channels(
+				&decoder, (*C.uint8_t)(unsafe.SliceData(flacData)), C.uint32_t(len(flacData)), &used, &channels,
+			)
+			if res != C.MINIFLAC_OK {
+				return nil, errors.New("miniflac: miniflac_streaminfo_channels failed")
+			}
+			if channels == 0 || channels > maxChannels {
+				return nil, errors.New("miniflac: invalid channels")
+			}
+			flacData = flacData[used:]
+			res = C.miniflac_streaminfo_bps(
+				&decoder, (*C.uint8_t)(unsafe.SliceData(flacData)), C.uint32_t(len(flacData)), &used, &bps,
+			)
+			if res != C.MINIFLAC_OK {
+				return nil, errors.New("miniflac: miniflac_streaminfo_bps failed")
+			}
+			if bps < 4 || bps > 32 {
+				return nil, errors.New("miniflac: invalid bps")
+			}
+			flacData = flacData[used:]
+			res = C.miniflac_streaminfo_total_samples(
+				&decoder, (*C.uint8_t)(unsafe.SliceData(flacData)), C.uint32_t(len(flacData)), &used, &totalSamples,
+			)
+			if res != C.MINIFLAC_OK {
+				return nil, errors.New("miniflac: miniflac_streaminfo_total_samples failed")
+			}
+			flacData = flacData[used:]
+			if totalSamples == 0 {
+				return nil, errors.New("miniflac: invalid total samples")
+			}
+			streamInfoFound = true
+			break
+		}
+		if res := C.miniflac_sync(
+			&decoder, (*C.uint8_t)(unsafe.SliceData(flacData)), C.uint32_t(len(flacData)), &used,
+		); res != C.MINIFLAC_OK {
+			return nil, errors.New("miniflac: miniflac_sync failed")
+		}
+		flacData = flacData[used:]
+	}
+	if !streamInfoFound {
+		return nil, ErrStreamInfoNotFound
+	}
+	waveform := &Waveform{
+		Channels:       int(channels),
+		SampleRate:     int(sampleRate),
+		Samples:        make([]int, totalSamples*C.uint64_t(channels)),
+		SourceBitDepth: int(bps),
+	}
 	samples := make([][]C.int32_t, maxChannels)
 	ptrs := make([]*C.int32_t, maxChannels)
 	for i := range samples {
@@ -34,55 +114,28 @@ func Decode(flacData []byte) (*Waveform, error) {
 		p.Pin(ptr)
 		ptrs[i] = ptr
 	}
-	var (
-		used  C.uint32_t
-		shift C.uint8_t
-	)
-	var waveform *Waveform
-	// TODO: can we get the number of total frames in flacData here?
+	var sampleCount int
 	for {
-		res := C.miniflac_decode(
+		if res := C.miniflac_decode(
 			&decoder,
 			(*C.uint8_t)(unsafe.SliceData(flacData)),
 			C.uint32_t(len(flacData)),
 			&used,
 			(**C.int32_t)(unsafe.SliceData(ptrs)),
-		)
-		if res != C.MINIFLAC_OK {
+		); res != C.MINIFLAC_OK {
 			break
 		}
-		if waveform == nil {
-			// TODO: can we use the first header's channel, bps, and sample rate?
-			// TODO: is this okay? can we just use the first frame's header info as global one?
-			waveform = &Waveform{
-				Channels:       int(decoder.frame.header.channels),
-				SampleRate:     int(decoder.frame.header.sample_rate),
-				SourceBitDepth: int(decoder.frame.header.bps),
-			}
-		}
 		flacData = flacData[used:]
-		// TODO: does bps change from frame to frame?
-		switch bps := decoder.frame.header.bps; {
-		case bps <= 8:
-			shift = 8 - bps
-		case bps <= 16:
-			shift = 16 - bps
-		case bps <= 24:
-			shift = 24 - bps
-		case bps <= 32:
-			shift = 32 - bps
-		default:
-			return nil, errors.New("miniflac: invalid bps")
-		}
-		for i := range decoder.frame.header.block_size {
-			for j := range decoder.frame.header.channels {
-				// TODO: is this bitshift operation required?
-				waveform.Samples = append(waveform.Samples, int(C.uint32_t(samples[j][i])<<shift))
+		header := decoder.frame.header
+		for i := range header.block_size {
+			for j := range header.channels {
+				waveform.Samples[sampleCount] = int(samples[j][i])
+				sampleCount++
 			}
 		}
 	}
-	if waveform == nil {
-		return nil, errors.New("miniflac: no frames decoded")
+	if sampleCount != len(waveform.Samples) {
+		return nil, errors.New("miniflac: sample count mismatch")
 	}
 	return waveform, nil
 }
@@ -94,6 +147,7 @@ type Waveform struct {
 	// SampleRate is the number of samples per second (e.g., 44100 Hz).
 	SampleRate int
 	// Samples contains the interleaved audio data.
-	Samples        []int
+	Samples []int
+	// SourceBitDepth is the original bit depth of the audio.
 	SourceBitDepth int
 }
