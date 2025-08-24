@@ -37,3 +37,10 @@ tasks:
   play/testdata/pcm:
     cmds:
       - ffplay -autoexit -f s32le -ar 96k -ch_layout stereo testdata/Sample_BeeMoved_96kHz24bit.pcm
+
+  run/docker:
+    cmds:
+      - docker build -t {{.DOCKER_IMAGE}} .
+      - "cat ./testdata/Sample_BeeMoved_96kHz24bit.flac | docker run --rm -i {{.DOCKER_IMAGE}} | ffplay -autoexit -i pipe:"
+    vars:
+      DOCKER_IMAGE: cowork-ai/go-miniflac
