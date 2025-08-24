@@ -31,7 +31,7 @@ type Waveform struct {
 
 ## Examples
 
-### How to convert an flac file to a WAV file using [go-audio/wav](https://github.com/go-audio/wav)
+### How to convert a FLAC file to a WAV file using [go-audio/wav](https://github.com/go-audio/wav)
 
 Check out [examples/flac-to-wav](https://github.com/cowork-ai/go-miniflac/blob/main/examples/flac-to-wav/main.go)
 
