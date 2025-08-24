@@ -1,5 +1,7 @@
 github.com/cowork-ai/go-miniflac v0.0.0-20250823020914-cffc61d51483 h1:2XGcDKQpBS6rZ07AcSepmNXC0in79gYi4J2YQdG13z0=
 github.com/cowork-ai/go-miniflac v0.0.0-20250823020914-cffc61d51483/go.mod h1:8J/Kbr2UznhlI3wq+BdWCGJDTvwbKe1wL5XvQoCZUto=
+github.com/cowork-ai/go-miniflac v1.0.0 h1:G/Zvkc1afQojSMLx2NlgpQhvFnrnfHOO/p7HkpF/ZIw=
+github.com/cowork-ai/go-miniflac v1.0.0/go.mod h1:/CMXSIl2mUePivYuH0TudAmEPZtNDbfdaW260KUw3Q8=
 github.com/go-audio/audio v1.0.0 h1:zS9vebldgbQqktK4H0lUqWrG8P0NxCJVqcj7ZpNnwd4=
 github.com/go-audio/audio v1.0.0/go.mod h1:6uAu0+H2lHkwdGsAY+j2wHPNPpPoeg5AaEFh9FlA+Zs=
 github.com/go-audio/riff v1.0.0 h1:d8iCGbDvox9BfLagY94fBynxSPHO80LmZCaOsmKxokA=
